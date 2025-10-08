@@ -7,8 +7,26 @@ const admin = require('firebase-admin');
 const app = express();
 const port = 3000;
 
+// ✅ FIXED: Body parser middleware properly সেটআপ করুন
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ 
+  limit: '10mb',
+  verify: (req, res, buf) => {
+    req.rawBody = buf;
+  }
+}));
+app.use(express.urlencoded({ 
+  extended: true, 
+  limit: '10mb' 
+}));
+
+// ✅ Request logging middleware যোগ করুন
+app.use((req, res, next) => {
+  console.log(`📨 ${req.method} ${req.url}`);
+  console.log('📦 Request body:', req.body);
+  console.log('📋 Content-Type:', req.get('Content-Type'));
+  next();
+});
 
 // Firebase Admin SDK initialization
 const serviceAccount = {
@@ -47,7 +65,7 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     await client.connect();
-    console.log(" Connected to MongoDB");
+    console.log("✅ Connected to MongoDB");
 
     const db = client.db("backbencherDB"); // DB name
     const userCollection = db.collection("users"); // Collection name
@@ -65,9 +83,19 @@ run();
 
 // default route
 app.get('/', (req, res) => {
-  res.send(' Backbencher Coder API is running');
+  res.send('🚀 Backbencher Coder API is running');
+});
+
+// ✅ Error handling middleware
+app.use((error, req, res, next) => {
+  console.error('❌ Server error:', error);
+  res.status(500).json({ 
+    success: false, 
+    message: 'Internal server error',
+    error: process.env.NODE_ENV === 'development' ? error.message : undefined
+  });
 });
 
 app.listen(port, () => {
-  console.log(`Server is running at http://localhost:${port}`);
+  console.log(`✅ Server is running at http://localhost:${port}`);
 });
