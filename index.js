@@ -31,7 +31,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Firebase Setup for production
+// Firebase Setup for production bro
 let serviceAccount;
 try {
   serviceAccount = {
