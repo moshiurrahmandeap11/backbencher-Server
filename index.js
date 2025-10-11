@@ -56,7 +56,7 @@ try {
 }
 
 // PostgreSQL Connection
-const pool = require('./db');
+const { pool, testConnection } = require('./db');
 
 // Create users table if not exists with profileImage and coverPhoto columns
 async function createTable() {
@@ -93,10 +93,11 @@ async function createTable() {
 // Initialize app
 async function startApp() {
   try {
-    // Test database connection
-    const client = await pool.connect();
+    console.log('🚀 Starting application...');
+    
+    // Test database connection with retry
+    await testConnection();
     console.log('✅ PostgreSQL connected successfully');
-    client.release();
 
     // Create table
     await createTable();
@@ -117,7 +118,7 @@ async function startApp() {
     // Health check endpoint
     app.get('/health', async (req, res) => {
       try {
-        await pool.query('SELECT 1');
+        await pool.query('SELECT NOW()');
         res.json({ 
           success: true, 
           message: 'Server & Database OK',
@@ -130,7 +131,7 @@ async function startApp() {
         res.status(500).json({ 
           success: false, 
           message: 'Database connection failed',
-          error: error.message 
+          error: process.env.NODE_ENV === 'production' ? 'Database error' : error.message 
         });
       }
     });
@@ -158,6 +159,7 @@ async function startApp() {
       console.log(`📁 Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log(`📁 Profile images served from: /uploads/profiles/`);
       console.log(`📁 Cover photos served from: /uploads/covers/`);
+      console.log(`🌐 Server URL: ${process.env.RENDER_EXTERNAL_URL || `http://localhost:${port}`}`);
     });
 
   } catch (error) {
@@ -165,5 +167,16 @@ async function startApp() {
     process.exit(1);
   }
 }
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('💥 Uncaught Exception:', error);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('💥 Unhandled Rejection at:', promise, 'reason:', reason);
+  process.exit(1);
+});
 
 startApp();
