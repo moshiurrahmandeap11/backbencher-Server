@@ -1,25 +1,16 @@
 // db.js
 const { Pool } = require("pg");
 
-// Render.com PostgreSQL connection - use DATABASE_URL from environment
-const connectionString = process.env.DATABASE_URL;
-
-if (!connectionString) {
-  console.error('❌ DATABASE_URL environment variable is not set');
-  process.exit(1);
-}
-
-console.log('🔗 Database URL:', connectionString ? 'Set' : 'Not set');
-
+// Local PostgreSQL connection using .env variables
 const pool = new Pool({
-  connectionString: connectionString,
-  ssl: connectionString.includes('render.com') ? { 
-    rejectUnauthorized: false 
-  } : false,
+  user: process.env.DB_USERNAME || process.env.PG_USER,
+  host: process.env.PG_HOST,
+  database: process.env.PG_DATABASE,
+  password: process.env.DB_PASSWORD || process.env.PG_PASSWORD,
+  port: process.env.PG_PORT,
   max: 10,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000,
-  maxUses: 7500,
 });
 
 // Connection events

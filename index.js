@@ -102,9 +102,19 @@ async function startApp() {
     // Create table
     await createTable();
 
-    // Setup routes
+    // import routes
     const userRoutes = require("./routes/userRoute/users")(pool, admin);
+    const subsRoutes = require("./routes/subsRoute/subscribers")(pool, admin)
+    const logosRoutes = require("./routes/logosRoute/logos")(pool, admin)
+    const siteSettingsRoutes = require("./routes/siteSettings/sitesettings")(pool, admin);
+    const seoRoutes = require("./routes/seoRoute/seo")(pool, admin);
+
+    // setup routes
     app.use('/bb/v1/users', userRoutes);
+    app.use("/bb/v1/subscribers", subsRoutes)
+    app.use("/bb/v1/logos", logosRoutes)
+    app.use("/bb/v1/site-settings", siteSettingsRoutes);
+    app.use("/bb/v1/seo", seoRoutes);
 
     // Default route
     app.get('/', (req, res) => {
@@ -136,23 +146,24 @@ async function startApp() {
       }
     });
 
-    // 404 handler
-    app.use('*', (req, res) => {
-      res.status(404).json({
-        success: false,
-        message: 'Route not found'
-      });
-    });
+// 404 handler - BEFORE error handling middleware
+app.use((req, res, next) => {
+  res.status(404).json({
+    success: false,
+    message: 'Route not found',
+    path: req.path
+  });
+});
 
-    // Error handling middleware
-    app.use((error, req, res, next) => {
-      console.error('Unhandled error:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Internal server error',
-        error: process.env.NODE_ENV === 'production' ? {} : error.message
-      });
-    });
+// Error handling middleware - AFTER 404 handler
+app.use((error, req, res, next) => {
+  console.error('Unhandled error:', error);
+  res.status(500).json({
+    success: false,
+    message: 'Internal server error',
+    error: process.env.NODE_ENV === 'production' ? {} : error.message
+  });
+});
 
     app.listen(port, () => {
       console.log(`✅ Server running on port ${port}`);
