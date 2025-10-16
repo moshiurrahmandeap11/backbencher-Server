@@ -164,9 +164,10 @@ const uploadMultiple = multer({
         coverPhoto: 'public'
       };
 
+      // Add role field with default value 'user'
       const insertQuery = `
-        INSERT INTO users (uid, name, email, age, privacysettings, profileimage, coverphoto) 
-        VALUES ($1, $2, $3, $4, $5, $6, $7) 
+        INSERT INTO users (uid, name, email, age, privacysettings, profileimage, coverphoto, role) 
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
         RETURNING *
       `;
       
@@ -177,7 +178,8 @@ const uploadMultiple = multer({
         age, 
         privacySettings,
         null, // profileImage initially null
-        null  // coverPhoto initially null
+        null, // coverPhoto initially null
+        'user' // role automatically set to 'user'
       ]);
       
       console.log("User created successfully:", result.rows[0].id);
@@ -240,6 +242,13 @@ const uploadMultiple = multer({
       if (req.body.age !== undefined) {
         updateFields.push(`age = $${paramCount}`);
         values.push(req.body.age === '' ? null : parseInt(req.body.age));
+        paramCount++;
+      }
+
+      // Handle role update
+      if (req.body.role !== undefined) {
+        updateFields.push(`role = $${paramCount}`);
+        values.push(req.body.role);
         paramCount++;
       }
 
@@ -444,18 +453,18 @@ const uploadMultiple = multer({
   router.put('/:uid', async (req, res) => {
     try {
       const uid = req.params.uid;
-      const { name, email, age, privacySettings } = req.body;
+      const { name, email, age, role, privacySettings } = req.body;
       
-      console.log(`Updating user ${uid} with:`, { name, email, age, privacySettings });
+      console.log(`Updating user ${uid} with:`, { name, email, age, role, privacySettings });
       
       const updateQuery = `
         UPDATE users 
-        SET name = $1, email = $2, age = $3, privacysettings = $4, updatedat = CURRENT_TIMESTAMP 
-        WHERE uid = $5 
+        SET name = $1, email = $2, age = $3, role = $4, privacysettings = $5, updatedat = CURRENT_TIMESTAMP 
+        WHERE uid = $6 
         RETURNING *
       `;
       
-      const result = await pool.query(updateQuery, [name, email, age, privacySettings, uid]);
+      const result = await pool.query(updateQuery, [name, email, age, role, privacySettings, uid]);
       
       console.log("Update result:", result.rowCount);
       
@@ -611,44 +620,119 @@ const uploadMultiple = multer({
     }
   });
 
-  // 🔹 Delete user from PostgreSQL + Firebase Auth
-  router.delete('/:uid', async (req, res) => {
+  // 🔹 Update user role
+  router.patch('/:uid/role', async (req, res) => {
     try {
       const uid = req.params.uid;
-
-      // Get user data first to delete images
-      const userResult = await pool.query('SELECT * FROM users WHERE uid = $1', [uid]);
-      if (userResult.rows.length > 0) {
-        const user = userResult.rows[0];
-        // Delete profile image if exists
-        if (user.profileimage) {
-          const imagePath = 'uploads/profiles/' + path.basename(user.profileimage);
-          if (fs.existsSync(imagePath)) {
-            fs.unlinkSync(imagePath);
-          }
-        }
-        // Delete cover photo if exists
-        if (user.coverphoto) {
-          const coverPath = 'uploads/covers/' + path.basename(user.coverphoto);
-          if (fs.existsSync(coverPath)) {
-            fs.unlinkSync(coverPath);
-          }
-        }
+      const { role } = req.body;
+      
+      // Validate role
+      const validRoles = ['user', 'admin', 'moderator'];
+      if (!validRoles.includes(role)) {
+        return res.status(400).json({ 
+          success: false, 
+          message: "Invalid role. Must be one of: " + validRoles.join(', ') 
+        });
       }
 
-      const result = await pool.query('DELETE FROM users WHERE uid = $1', [uid]);
+      const result = await pool.query(
+        'UPDATE users SET role = $1, updatedat = CURRENT_TIMESTAMP WHERE uid = $2 RETURNING *',
+        [role, uid]
+      );
+
       if (result.rowCount === 0) {
-        return res.status(404).json({ success: false, message: "User not found in PostgreSQL" });
+        return res.status(404).json({ success: false, message: "User not found" });
       }
 
-      await admin.auth().deleteUser(uid);
-
-      res.json({ success: true, message: "User deleted from PostgreSQL and Firebase Auth" });
+      res.json({
+        success: true,
+        message: `User role updated to ${role}`,
+        data: result.rows[0]
+      });
     } catch (error) {
-      console.error("Error deleting user:", error);
+      console.error("Error updating user role:", error);
       res.status(500).json({ success: false, message: error.message });
     }
   });
+
+  // 🔹 Get users by role
+  router.get('/role/:role', async (req, res) => {
+    try {
+      const role = req.params.role;
+      
+      const result = await pool.query(
+        'SELECT * FROM users WHERE role = $1 ORDER BY createdat DESC',
+        [role]
+      );
+
+      res.json({
+        success: true,
+        data: result.rows
+      });
+    } catch (error) {
+      console.error("Error fetching users by role:", error);
+      res.status(500).json({ success: false, message: error.message });
+    }
+  });
+
+  // 🔹 Delete user from PostgreSQL + Firebase Auth
+router.delete('/:uid', async (req, res) => {
+  try {
+    const uid = req.params.uid;
+
+    // Get user data first to delete images
+    const userResult = await pool.query('SELECT * FROM users WHERE uid = $1', [uid]);
+    if (userResult.rows.length > 0) {
+      const user = userResult.rows[0];
+      // Delete profile image if exists
+      if (user.profileimage) {
+        const imagePath = 'uploads/profiles/' + path.basename(user.profileimage);
+        if (fs.existsSync(imagePath)) {
+          fs.unlinkSync(imagePath);
+        }
+      }
+      // Delete cover photo if exists
+      if (user.coverphoto) {
+        const coverPath = 'uploads/covers/' + path.basename(user.coverphoto);
+        if (fs.existsSync(coverPath)) {
+          fs.unlinkSync(coverPath);
+        }
+      }
+    }
+
+    // Delete from PostgreSQL
+    const result = await pool.query('DELETE FROM users WHERE uid = $1', [uid]);
+    if (result.rowCount === 0) {
+      return res.status(404).json({ success: false, message: "User not found in PostgreSQL" });
+    }
+
+    // Try to delete from Firebase Auth (if admin is available and initialized)
+    let firebaseMessage = '';
+    try {
+      // Check if admin is available and Firebase app is initialized
+      if (admin && admin.apps.length > 0) {
+        await admin.auth().deleteUser(uid);
+        firebaseMessage = ' and Firebase Auth';
+        console.log(`✅ User ${uid} deleted from Firebase Auth`);
+      } else {
+        firebaseMessage = ' (Firebase skipped - not initialized)';
+        console.log(`⚠️  Firebase not initialized, skipping Firebase delete for ${uid}`);
+      }
+    } catch (firebaseError) {
+      console.warn('⚠️  Firebase delete failed:', firebaseError.message);
+      firebaseMessage = ' (Firebase delete failed)';
+    }
+
+    res.json({ 
+      success: true, 
+      message: `User deleted from PostgreSQL${firebaseMessage}` 
+    });
+
+  } catch (error) {
+    console.error("Error deleting user:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
 
   return router;
 };

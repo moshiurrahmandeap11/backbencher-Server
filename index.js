@@ -48,32 +48,45 @@ app.use((req, res, next) => {
 // Firebase Setup for both environments
 let serviceAccount;
 try {
-  // Check if we're in production and use service account from env
-  if (process.env.NODE_ENV === 'production') {
-    serviceAccount = {
-      type: process.env.FIREBASE_TYPE,
-      project_id: process.env.FIREBASE_PROJECT_ID,
-      private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID,
-      private_key: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-      client_email: process.env.FIREBASE_CLIENT_EMAIL,
-      client_id: process.env.FIREBASE_CLIENT_ID,
-      auth_uri: "https://accounts.google.com/o/oauth2/auth",
-      token_uri: "https://oauth2.googleapis.com/token",
-      auth_provider_x509_cert_url: "https://www.googleapis.com/oauth2/v1/certs",
-      client_x509_cert_url: process.env.FIREBASE_CLIENT_CERT_URL
-    };
-  } else {
-    // For local development, you might want to use a different method
-    // or keep the service account key file
-    serviceAccount = require('./path/to/your/serviceAccountKey.json');
+  // Always use environment variables (both production and development)
+  serviceAccount = {
+    type: process.env.FIREBASE_TYPE,
+    project_id: process.env.FIREBASE_PROJECT_ID,
+    private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID,
+    private_key: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+    client_email: process.env.FIREBASE_CLIENT_EMAIL,
+    client_id: process.env.FIREBASE_CLIENT_ID,
+    auth_uri: "https://accounts.google.com/o/oauth2/auth",
+    token_uri: "https://oauth2.googleapis.com/token",
+    auth_provider_x509_cert_url: "https://www.googleapis.com/oauth2/v1/certs",
+    client_x509_cert_url: process.env.FIREBASE_CLIENT_CERT_URL
+  };
+
+  console.log('🔧 Firebase Config Check:');
+  console.log('   Project ID:', process.env.FIREBASE_PROJECT_ID ? '✅' : '❌');
+  console.log('   Client Email:', process.env.FIREBASE_CLIENT_EMAIL ? '✅' : '❌');
+  console.log('   Private Key:', process.env.FIREBASE_PRIVATE_KEY ? '✅' : '❌');
+
+  // Check if required fields are present
+  if (!serviceAccount.private_key || !serviceAccount.client_email || !serviceAccount.project_id) {
+    throw new Error('Missing required Firebase environment variables');
   }
 
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
-  });
-  console.log('✅ Firebase Admin initialized successfully');
+  // Check if Firebase app is already initialized
+  if (admin.apps.length === 0) {
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount)
+    });
+    console.log('✅ Firebase Admin initialized successfully');
+  } else {
+    console.log('✅ Firebase Admin already initialized');
+  }
+
 } catch (error) {
-  console.error('❌ Firebase initialization error:', error);
+  console.error('❌ Firebase initialization error:', error.message);
+  console.log('⚠️  Firebase features will be disabled');
+  // Set admin to null or continue without Firebase
+  admin = null;
 }
 
 // PostgreSQL Connection
@@ -83,27 +96,29 @@ const { pool, testConnection } = require('./db');
 async function createTables() {
   try {
     // Users table
-    const usersTableQuery = `
-      CREATE TABLE IF NOT EXISTS users (
-        id SERIAL PRIMARY KEY,
-        uid VARCHAR(255) UNIQUE NOT NULL,
-        name VARCHAR(255) NOT NULL,
-        email VARCHAR(255) NOT NULL,
-        age INTEGER,
-        profileimage VARCHAR(500),
-        coverphoto VARCHAR(500),
-        privacysettings JSONB DEFAULT '{
-          "name": "public",
-          "email": "public", 
-          "age": "public",
-          "profileImage": "public",
-          "coverPhoto": "public"
-        }',
-        lastlogin TIMESTAMP,
-        createdat TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updatedat TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `;
+// Users table
+const usersTableQuery = `
+  CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    uid VARCHAR(255) UNIQUE NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    age INTEGER,
+    profileimage VARCHAR(500),
+    coverphoto VARCHAR(500),
+    role VARCHAR(50) DEFAULT 'user',
+    privacysettings JSONB DEFAULT '{
+      "name": "public",
+      "email": "public", 
+      "age": "public",
+      "profileImage": "public",
+      "coverPhoto": "public"
+    }',
+    lastlogin TIMESTAMP,
+    createdat TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updatedat TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  )
+`;
     
     // Site settings table
     const siteSettingsTableQuery = `
